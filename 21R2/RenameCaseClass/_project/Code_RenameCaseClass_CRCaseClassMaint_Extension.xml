@@ -1,0 +1,134 @@
+﻿<Graph ClassName="RenameCaseClass_CRCaseClassMaint_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+    <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
+using PX.Data;
+using PX.SM;
+using PX.Objects.CR;
+using PX.Data.BQL.Fluent;
+using System.Linq;
+using System.Collections;
+using PX.Data.BQL;
+using PX.Common;
+
+namespace RenameCaseClass
+{
+    public class CRCaseClassMaint_Extension : PXGraphExtension<CRCaseClassMaint>
+    {
+        public PXChangeID<CRCaseClass, CRCaseClass.caseClassID> ChangeID;
+
+        public PXAction<CRCaseClass> action;
+        [PXButton(MenuAutoOpen = true)]
+        [PXUIField(DisplayName = "Actions", MapViewRights = PXCacheRights.Select,
+            MapEnableRights = PXCacheRights.Select)]
+        protected virtual void Action() { }
+
+        public override void Initialize()
+        {
+            base.Initialize();
+            action.AddMenuAction(ChangeID);
+        }
+
+        protected virtual void _(Events.RowPersisting<CRCaseClass> e)
+        {
+            CRCaseClass newClass = e.Row;
+            if (e.Row is null || e.Cache.GetStatus(newClass) == PXEntryStatus.Inserted) return;
+
+            CRCaseClass oldClass = (CRCaseClass)e.Cache.GetOriginal(newClass);
+            if (oldClass.CaseClassID != newClass.CaseClassID)
+            {
+                var classGraph = Base;
+                string oldID = oldClass.CaseClassID;
+                string newID = newClass.CaseClassID;
+                bool completed = true;
+                PXLongOperation.StartOperation(Base, delegate ()
+                {
+                    completed = RenameClass(oldID, newID);
+                });
+PXLongOperation.WaitCompletion(Base.UID);
+                e.Cancel = !completed;
+                if (!completed)
+                    throw new PXException("Failed");
+            }
+        }
+
+        public static bool RenameClass(string oldID, string newID)
+        {
+            using (PXTransactionScope ts = new PXTransactionScope())
+            {
+                try
+                {
+                    // CRCase
+                    PXResultset<CRCase> cases = SelectFrom<CRCase>.Where<CRCase.caseClassID.IsEqual<@P.AsString>>.View.Select(new PXGraph(), oldID);
+                    if (cases != null && cases.Count > 0)
+                    {
+                        if (!PXDatabase.Update<CRCase>(
+                            new PXDataFieldAssign<CRCase.caseClassID>(newID),
+                            new PXDataFieldRestrict<CRCase.caseClassID>(oldID)))
+                        {
+                            throw new PXException();
+                        }
+                    }
+
+                    // CRCaseClassLaborMatrix
+                    PXResultset<CRCaseClassLaborMatrix> caseClassLaborMatrices = SelectFrom<CRCaseClassLaborMatrix>.Where<CRCaseClassLaborMatrix.caseClassID.IsEqual<@P.AsString>>.View.Select(new PXGraph(), oldID);
+                    if (caseClassLaborMatrices != null && caseClassLaborMatrices.Count > 0)
+                    {
+                        if (!PXDatabase.Update<CRCaseClassLaborMatrix>(
+                                new PXDataFieldAssign<CRCaseClassLaborMatrix.caseClassID>(newID),
+                                new PXDataFieldRestrict<CRCaseClassLaborMatrix.caseClassID>(oldID)))
+                        {
+                            throw new PXException();
+                        }
+                    }
+
+                    // EMailAccount
+                    PXResultset<EMailAccount> emailAccounts = SelectFrom<EMailAccount>.Where<EMailAccount.createCaseClassID.IsEqual<@P.AsString>>.View.Select(new PXGraph(), oldID);
+                    if (emailAccounts != null && emailAccounts.Count > 0)
+                    {
+                        if (!PXDatabase.Update<EMailAccount>(
+                            new PXDataFieldAssign<EMailAccount.createCaseClassID>(newID),
+                            new PXDataFieldRestrict<EMailAccount.createCaseClassID>(oldID)))
+                        {
+                            throw new PXException();
+                        }
+                    }
+
+                    // Filters
+                    PXResultset<FilterRow> filterRows = SelectFrom<FilterRow>.Where<FilterRow.dataField.IsEqual<@P.AsString>>.View.Select(new PXGraph(), "CRCase_caseClassID");
+                    if (filterRows != null && filterRows.Count > 0)
+                    {
+                        if (!PXDatabase.Update<FilterRow>(
+                            new PXDataFieldAssign<FilterRow.valueSt>(PXDbType.VarChar, newID),
+                            new PXDataFieldRestrict<FilterRow.dataField>("CRCase_caseClassID"),
+                            new PXDataFieldRestrict<FilterRow.valueSt>(oldID)))
+                        {
+                            throw new PXException();
+                        }
+                    }
+
+                    // CRSetup
+                    CRSetupMaint setupGraph = PXGraph.CreateInstance<CRSetupMaint>();
+                    CRSetup crSetup = setupGraph.CRSetupRecord.Select();
+                    if (crSetup != null && crSetup.DefaultCaseClassID == oldID)
+                    {
+                        if (!PXDatabase.Update<CRSetup>(
+                            new PXDataFieldAssign<CRSetup.defaultCaseClassID>(newID),
+                            new PXDataFieldRestrict<CRSetup.defaultCaseClassID>(oldID)))
+                        {
+                            throw new PXException();
+                        }
+                    }
+
+                    // Complete transaction
+                    ts.Complete();
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    return false;
+                }
+            }
+        }
+    }
+}]]></CDATA>
+</Graph>
